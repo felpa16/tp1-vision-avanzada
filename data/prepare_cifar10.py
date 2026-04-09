@@ -1,6 +1,6 @@
 import torch
 from torchvision import datasets, transforms
-from torch.utils.data import Subset
+from torch.utils.data import Subset, DataLoader
 
 
 transform = transforms.Compose([
