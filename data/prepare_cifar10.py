@@ -40,4 +40,4 @@ for i, class_indices in enumerate(TASKS):
     test_subset  = get_task_subset(test_set,  class_indices)
     task_splits.append({'train': train_subset, 'test': test_subset})
     class_names = [CIFAR10_CLASSES[c] for c in class_indices]
-    print(f"Task {i+1} {class_names}: {len(train_subset)} train, {len(test_subset)} test samples")
+    # print(f"Task {i+1} {class_names}: {len(train_subset)} train, {len(test_subset)} test samples")
