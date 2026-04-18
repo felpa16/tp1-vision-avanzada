@@ -67,8 +67,14 @@ class EWCState:
         model.train(False)
         new_fisher: dict[str, torch.Tensor] = {}
 
+        # Exclude the joint_head: its weights grow with each task (expand()),
+        # so a snapshot taken at task t would mismatch in size at task t+1.
+        # EWC regularisation is applied only to the backbone parameters.
+        def _is_backbone(name: str) -> bool:
+            return not name.startswith('joint_head')
+
         for name, param in model.named_parameters():
-            if param.requires_grad:
+            if param.requires_grad and _is_backbone(name):
                 new_fisher[name] = torch.zeros_like(param.data)
 
         samples_seen = 0
@@ -83,7 +89,7 @@ class EWCState:
             loss.backward()
 
             for name, param in model.named_parameters():
-                if param.requires_grad and param.grad is not None:
+                if param.requires_grad and param.grad is not None and _is_backbone(name):
                     new_fisher[name] += param.grad.data.pow(2)
 
             samples_seen += images.size(0)
@@ -96,11 +102,11 @@ class EWCState:
             else:
                 self.fisher[name] = new_fisher[name]
 
-        # Snapshot current parameters
+        # Snapshot current backbone parameters
         self.means = {
             name: param.data.clone()
             for name, param in model.named_parameters()
-            if param.requires_grad
+            if param.requires_grad and _is_backbone(name)
         }
 
         model.train(True)
