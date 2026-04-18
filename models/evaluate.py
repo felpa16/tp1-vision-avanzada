@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
+from data.prepare_cifar10 import TASKS
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -106,9 +107,12 @@ def evaluate_task_il(
                 batch_size=batch_size,
                 shuffle=False,
             )
+            # Labels are original CIFAR-10 indices; remap to {0, 1} for this head
+            label_offset = min(TASKS[task_idx])
             correct = total = 0
             for images, labels in loader:
                 images, labels = images.to(device), labels.to(device)
+                labels = labels - label_offset
                 embeddings, _ = backbone_model(images)
                 preds = head(embeddings).argmax(dim=1)
                 correct += (preds == labels).sum().item()
@@ -140,6 +144,12 @@ def train_task_head(
 
     train_loader = DataLoader(task_split['train'], batch_size=batch_size, shuffle=True)
 
+    # Labels in the subset are original CIFAR-10 indices (e.g. 2,3 for task 1).
+    # Remap them to {0, ..., n_classes-1} so CrossEntropyLoss is in range.
+    subset = task_split['train']
+    raw_labels = [subset.dataset.targets[i] for i in subset.indices]
+    label_offset = min(raw_labels)
+
     head = ClassificationHead(embedding_dim=embedding_dim, n_classes=n_classes).to(device)
     optimizer = torch.optim.Adam(head.parameters(), lr=lr)
     criterion = nn.CrossEntropyLoss()
@@ -153,6 +163,7 @@ def train_task_head(
         head.train(True)
         for images, labels in train_loader:
             images, labels = images.to(device), labels.to(device)
+            labels = labels - label_offset   # remap to {0, ..., n_classes-1}
             optimizer.zero_grad()
             with torch.no_grad():
                 embeddings, _ = backbone_model(images)
