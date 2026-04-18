@@ -4,6 +4,8 @@ import torch.nn as nn
 from torchvision.models import resnet18
 from torch.utils.data import DataLoader
 from data.prepare_cifar10 import task_splits, TASKS
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from sklearn.manifold import TSNE
 
@@ -110,9 +112,9 @@ def plot_snapshots(snapshots, class_indices):
                         title=f'Epoch {epoch_key} — {label}')
 
     plt.tight_layout()
-    plt.savefig('latent_space_snapshots.png', dpi=150, bbox_inches='tight')
-    plt.show()
-    print("Figure saved to latent_space_snapshots.png")
+    plt.savefig('graphs/latent_space_snapshots.png', dpi=150, bbox_inches='tight')
+    plt.close()
+    print("Figure saved to graphs/latent_space_snapshots.png")
 
 
 # ── Training ──────────────────────────────────────────────────────────────────
