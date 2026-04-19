@@ -51,16 +51,39 @@ def run_all_methods() -> dict:
 
     results = {}
 
-    for label, fn in [
-        ('Fine-Tune', train_finetune),
-        ('EWC',       train_ewc),
-        ('LwF',       train_lwf),
-        ('Co2L',      train_co2l),
-    ]:
+    CL_EPOCHS  = 10
+    CL_LR      = 1e-3
+    HEAD_EPOCHS = 10
+    HEAD_LR    = 8e-4
+    BATCH_SIZE = 64
+
+    runs = [
+        ('Fine-Tune', train_finetune, dict(
+            num_epochs=CL_EPOCHS, lr=CL_LR, batch_size=BATCH_SIZE,
+            head_epochs=HEAD_EPOCHS, head_lr=HEAD_LR,
+        )),
+        ('EWC', train_ewc, dict(
+            lambda_ewc=5000.0, fisher_samples=500,
+            num_epochs=CL_EPOCHS, lr=CL_LR, batch_size=BATCH_SIZE,
+            head_epochs=HEAD_EPOCHS, head_lr=HEAD_LR,
+        )),
+        ('LwF', train_lwf, dict(
+            lambda_lwf=1.0, temperature=2.0,
+            num_epochs=CL_EPOCHS, lr=CL_LR, batch_size=BATCH_SIZE,
+            head_epochs=HEAD_EPOCHS, head_lr=HEAD_LR,
+        )),
+        ('Co2L', train_co2l, dict(
+            lambda_co2l=1.0, buffer_size=200,
+            num_epochs=CL_EPOCHS, lr=CL_LR, batch_size=BATCH_SIZE,
+            head_epochs=HEAD_EPOCHS, head_lr=HEAD_LR,
+        )),
+    ]
+
+    for label, fn, kwargs in runs:
         print(f"\n{'='*70}")
         print(f"Running: {label}")
         print('='*70)
-        results[label] = fn(backbone_weights=BACKBONE_WEIGHTS)
+        results[label] = fn(backbone_weights=BACKBONE_WEIGHTS, **kwargs)
 
     return results
 

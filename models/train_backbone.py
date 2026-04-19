@@ -11,13 +11,13 @@ from sklearn.manifold import TSNE
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-NUM_EPOCHS = 25
+NUM_EPOCHS = 50
 LEARNING_RATE = 5e-3
 TEMPERATURE = 0.07
 EMBEDDING_DIM = 512
 INTERMEDIATE_DIM = 256
 PROJECTION_DIM = 128
-SNAPSHOT_EPOCHS = {0: 'before training', 12: 'mid-training', NUM_EPOCHS: 'after training'}
+SNAPSHOT_EPOCHS = {0: 'before training', 25: 'mid-training', NUM_EPOCHS: 'after training'}
 
 
 # ── Model definition ──────────────────────────────────────────────────────────

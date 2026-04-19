@@ -3,13 +3,20 @@ from torchvision import datasets, transforms
 from torch.utils.data import Subset, DataLoader
 
 
-transform = transforms.Compose([
+train_transform = transforms.Compose([
+    transforms.RandomCrop(32, padding=4),
+    transforms.RandomHorizontalFlip(),
     transforms.ToTensor(),
-    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
 ])
 
-train_set = datasets.CIFAR10('./data', train=True, download=False, transform=transform)
-test_set = datasets.CIFAR10('./data', train=False, download=False, transform=transform)
+test_transform = transforms.Compose([
+    transforms.ToTensor(),
+    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+])
+
+train_set = datasets.CIFAR10('./data', train=True, download=False, transform=train_transform)
+test_set  = datasets.CIFAR10('./data', train=False, download=False, transform=test_transform)
 
 CIFAR10_CLASSES = [
     'airplane', 'automobile', 'bird', 'cat', 'deer',
