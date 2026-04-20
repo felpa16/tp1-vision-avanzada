@@ -38,7 +38,7 @@ def load_backbone(weights_path='backbone.pth'):
         intermediate_dim=256,
         projection_dim=128,
     ).to(device)
-    backbone_model.backbone.load_state_dict(torch.load(weights_path, map_location=device))
+    backbone_model.load_state_dict(torch.load(weights_path, map_location=device))
     backbone_model.eval()
     for param in backbone_model.parameters():
         param.requires_grad = False

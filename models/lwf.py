@@ -74,7 +74,7 @@ def _kd_loss(
     old_logits = current_logits[:, :n_old_classes]
     log_probs  = F.log_softmax(old_logits / temperature, dim=1)
     # KL( soft_targets || current ) = sum( T * log(T/S) ) — here we use NLL form
-    return F.kl_div(log_probs, soft_targets, reduction='batchmean')
+    return F.kl_div(log_probs, soft_targets, reduction='batchmean') * (temperature ** 2)
 
 
 def train_lwf(
@@ -112,7 +112,7 @@ def train_lwf(
         intermediate_dim=256,
         projection_dim=128,
     ).to(device)
-    backbone_model.backbone.load_state_dict(
+    backbone_model.load_state_dict(
         torch.load(backbone_weights, map_location=device)
     )
 

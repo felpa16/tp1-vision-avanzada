@@ -61,7 +61,7 @@ def train_finetune(
         intermediate_dim=256,
         projection_dim=128,
     ).to(device)
-    backbone_model.backbone.load_state_dict(
+    backbone_model.load_state_dict(
         torch.load(backbone_weights, map_location=device)
     )
 
