@@ -24,7 +24,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 
 from data.prepare_cifar10 import task_splits
-from models.train_backbone import build_backbone, EMBEDDING_DIM
+from models.train_backbone import BackboneModel, build_backbone, EMBEDDING_DIM
 from models.evaluate import ExpandableHead, evaluate_class_il, evaluate_task_il, train_task_head
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -33,7 +33,7 @@ N_CLASSES_PER_TASK = 2
 
 
 def _collect_soft_targets(
-    backbone: nn.Module,
+    backbone_model: nn.Module,
     joint_head: ExpandableHead,
     loader: DataLoader,
     temperature: float,
@@ -45,20 +45,20 @@ def _collect_soft_targets(
     all_images       : Tensor (N, C, H, W) – CPU
     soft_targets     : Tensor (N, n_old_classes) – soft probabilities at temperature T
     """
-    backbone.train(False)
+    backbone_model.train(False)
     joint_head.train(False)
 
     images_list, targets_list = [], []
     with torch.no_grad():
         for images, _ in loader:
             images = images.to(device)
-            embeddings = backbone(images)
+            embeddings, _ = backbone_model(images)
             logits = joint_head(embeddings)                 # (B, n_old_classes)
             soft = F.softmax(logits / temperature, dim=1)  # soften
             images_list.append(images.cpu())
             targets_list.append(soft.cpu())
 
-    backbone.train(True)
+    backbone_model.train(True)
     joint_head.train(True)
 
     return torch.cat(images_list), torch.cat(targets_list)
@@ -106,8 +106,15 @@ def train_lwf(
     -------
     dict with 'class_il' and 'task_il' lists
     """
-    backbone = build_backbone().to(device)
-    backbone.load_state_dict(torch.load(backbone_weights, map_location=device))
+    backbone_model = BackboneModel(
+        backbone=build_backbone(),
+        embedding_dim=EMBEDDING_DIM,
+        intermediate_dim=256,
+        projection_dim=128,
+    ).to(device)
+    backbone_model.load_state_dict(
+        torch.load(backbone_weights, map_location=device)
+    )
 
     joint_head    = ExpandableHead(in_features=EMBEDDING_DIM, n_classes=N_CLASSES_PER_TASK).to(device)
     task_heads    = []
@@ -132,7 +139,7 @@ def train_lwf(
             if verbose:
                 print("  Collecting soft targets from old model…")
             all_images, soft_targets = _collect_soft_targets(
-                backbone, joint_head, train_loader, temperature
+                backbone_model, joint_head, train_loader, temperature
             )
             kd_dataset  = TensorDataset(all_images, soft_targets)
             kd_loader   = DataLoader(kd_dataset, batch_size=batch_size, shuffle=True)
@@ -143,14 +150,14 @@ def train_lwf(
         joint_head = joint_head.to(device)
 
         optimizer = torch.optim.Adam(
-            list(backbone.parameters()) + list(joint_head.parameters()),
+            list(backbone_model.parameters()) + list(joint_head.parameters()),
             lr=lr,
         )
 
         # Build a CE loader that also yields soft-target batches when needed
         # We iterate both loaders in lock-step (zip stops at the shorter one)
         for epoch in range(num_epochs):
-            backbone.train(True)
+            backbone_model.train(True)
             joint_head.train(True)
             total_loss = 0.0
 
@@ -159,7 +166,7 @@ def train_lwf(
                 for images, labels in train_loader:
                     images, labels = images.to(device), labels.to(device)
                     optimizer.zero_grad()
-                    embeddings = backbone(images)
+                    embeddings, _ = backbone_model(images)
                     loss = criterion_ce(joint_head(embeddings), labels)
                     loss.backward()
                     optimizer.step()
@@ -173,11 +180,11 @@ def train_lwf(
                     optimizer.zero_grad()
 
                     # CE term on new task
-                    emb_ce = backbone(imgs_ce)
+                    emb_ce, _ = backbone_model(imgs_ce)
                     ce_loss   = criterion_ce(joint_head(emb_ce), labels_ce)
 
                     # KD term on same samples (using images from soft-target set)
-                    emb_kd = backbone(imgs_kd)
+                    emb_kd, _ = backbone_model(imgs_kd)
                     cur_logits = joint_head(emb_kd)
                     kd = _kd_loss(cur_logits, soft_tgt, n_old_classes, temperature)
 
@@ -192,7 +199,7 @@ def train_lwf(
 
         # ── Train Task-IL head ────────────────────────────────────────────────
         head = train_task_head(
-            backbone_model=backbone,
+            backbone_model=backbone_model,
             task_split=task,
             embedding_dim=EMBEDDING_DIM,
             n_classes=N_CLASSES_PER_TASK,
@@ -203,8 +210,8 @@ def train_lwf(
         task_heads.append(head)
 
         # ── Evaluate ──────────────────────────────────────────────────────────
-        class_il = evaluate_class_il(backbone, joint_head, task_splits, task_idx + 1)
-        task_il  = evaluate_task_il(backbone, task_heads, task_splits, task_idx + 1)
+        class_il = evaluate_class_il(backbone_model, joint_head, task_splits, task_idx + 1)
+        task_il  = evaluate_task_il(backbone_model, task_heads, task_splits, task_idx + 1)
         class_il_accs.append(class_il)
         task_il_accs.append(task_il)
 

@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.optim import Adam
-from models.train_backbone import EMBEDDING_DIM, build_backbone
+from models.train_backbone import EMBEDDING_DIM, BackboneModel, build_backbone
 from data.prepare_cifar10 import task_splits
 import matplotlib.pyplot as plt
 
@@ -32,22 +32,27 @@ class ClassificationHead(nn.Module):
 
 def load_backbone(weights_path='backbone.pth'):
     """Load the frozen backbone from a saved checkpoint."""
-    backbone = build_backbone().to(device)
-    backbone.load_state_dict(torch.load(weights_path, map_location=device))
-    backbone.eval()
-    for param in backbone.parameters():
+    backbone_model = BackboneModel(
+        backbone=build_backbone(),
+        embedding_dim=EMBEDDING_DIM,
+        intermediate_dim=256,
+        projection_dim=128,
+    ).to(device)
+    backbone_model.load_state_dict(torch.load(weights_path, map_location=device))
+    backbone_model.eval()
+    for param in backbone_model.parameters():
         param.requires_grad = False
-    return backbone
+    return backbone_model
 
 
-def evaluate(head, backbone, loader):
+def evaluate(head, backbone_model, loader):
     """Return the accuracy (%) of *head* over *loader* using the frozen backbone."""
     head.eval()
     correct = total = 0
     with torch.no_grad():
         for images, labels in loader:
             images, labels = images.to(device), labels.to(device)
-            embeddings = backbone(images)
+            embeddings, _ = backbone_model(images)
             preds = head(embeddings).argmax(dim=1)
             correct += (preds == labels).sum().item()
             total   += labels.size(0)
@@ -95,7 +100,7 @@ def train_classifier(task_index, backbone_model, n_classes=2,
             images, labels = images.to(device), labels.to(device)
             optimizer.zero_grad()
             with torch.no_grad():
-                embeddings = backbone_model(images)
+                embeddings, _ = backbone_model(images)
             loss = criterion(head(embeddings), labels)
             loss.backward()
             optimizer.step()
@@ -141,15 +146,15 @@ def plot_metrics(train_losses, test_accuracies, task_index, save_path=None):
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 if __name__ == '__main__':
-    backbone = load_backbone('backbone.pth')
+    backbone_model = load_backbone('backbone.pth')
 
     # Train on a single task
-    # head, losses, accuracies = train_classifier(task_index=0, backbone_model=backbone)
+    # head, losses, accuracies = train_classifier(task_index=0, backbone_model=backbone_model)
     # plot_metrics(losses, accuracies, task_index=0)
 
     # Or loop over all 5 tasks in sequence:
     for task_index in range(len(task_splits)):
-        head, losses, accuracies = train_classifier(task_index, backbone)
+        head, losses, accuracies = train_classifier(task_index, backbone_model)
         test_loader  = DataLoader(task_splits[task_index]['test'], batch_size=BATCH_SIZE, shuffle=False)
-        evaluate = evaluate(head, backbone, test_loader)
+        evaluate = evaluate(head, backbone_model, test_loader)
         print(f'Classifier accuracy for task {task_index + 1}: {evaluate}')
