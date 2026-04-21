@@ -11,13 +11,13 @@ from sklearn.manifold import TSNE
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-NUM_EPOCHS = 50
+NUM_EPOCHS = 75
 LEARNING_RATE = 5e-3
 TEMPERATURE = 0.07
 EMBEDDING_DIM = 512
 INTERMEDIATE_DIM = 256
 PROJECTION_DIM = 128
-SNAPSHOT_EPOCHS = {0: 'before training', 25: 'mid-training', NUM_EPOCHS: 'after training'}
+SNAPSHOT_EPOCHS = {0: 'before training', 37: 'mid-training', NUM_EPOCHS: 'after training'}
 
 
 # ── Model definition ──────────────────────────────────────────────────────────
@@ -56,8 +56,10 @@ def supcon_loss(features, labels, tau):
     logits_mask = torch.ones_like(mask) - torch.eye(len(mask), device=device)
     mask = mask * logits_mask
 
-    exp_sim = torch.exp(sim) * logits_mask
-    log_prob = sim - torch.log(exp_sim.sum(dim=1, keepdim=True))
+    # Log-sum-exp stability trick
+    max_sim = sim.max(dim=1, keepdim=True).values.detach()
+    exp_sim = torch.exp(sim - max_sim) * logits_mask
+    log_prob = (sim - max_sim) - torch.log(exp_sim.sum(dim=1, keepdim=True))
 
     pos_counts = mask.sum(1)
     if (pos_counts == 0).any():
@@ -202,7 +204,7 @@ def train_backbone(task_number=0, num_epochs=NUM_EPOCHS, lr=LEARNING_RATE,
             print(f"Snapshot collected: epoch {completed_epoch} "
                   f"({SNAPSHOT_EPOCHS[completed_epoch]})")
 
-    torch.save(model.backbone.state_dict(), save_path)
+    torch.save(model.state_dict(), save_path)
     print(f"\nBackbone saved to {save_path}")
 
     plot_snapshots(snapshots, class_indices)

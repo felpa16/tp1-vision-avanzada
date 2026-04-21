@@ -38,6 +38,10 @@ class EWCState:
     ----------
     means  : dict[str, Tensor]  – θ* (parameter values after each task)
     fisher : dict[str, Tensor]  – accumulated diagonal Fisher across all tasks
+
+    Handles expandable parameters (e.g. joint_head) whose shape grows between
+    tasks: old Fisher/means are zero-padded to match the current shape before
+    accumulation, so the penalty applies only to previously-existing neurons.
     """
 
     def __init__(self):
@@ -55,26 +59,12 @@ class EWCState:
 
         Uses the empirical Fisher (square of the gradient of the log-likelihood
         averaged over a subset of training samples).
-
-        Parameters
-        ----------
-        model     : the current model (backbone + joint head must be joined
-                    by the caller into a single forward pass)
-        loader    : DataLoader for the just-trained task
-        criterion : CrossEntropyLoss
-        n_samples : how many samples to use (subsample for speed)
         """
         model.train(False)
         new_fisher: dict[str, torch.Tensor] = {}
 
-        # Exclude the joint_head: its weights grow with each task (expand()),
-        # so a snapshot taken at task t would mismatch in size at task t+1.
-        # EWC regularisation is applied only to the backbone parameters.
-        def _is_backbone(name: str) -> bool:
-            return not name.startswith('joint_head')
-
         for name, param in model.named_parameters():
-            if param.requires_grad and _is_backbone(name):
+            if param.requires_grad:
                 new_fisher[name] = torch.zeros_like(param.data)
 
         samples_seen = 0
@@ -89,35 +79,59 @@ class EWCState:
             loss.backward()
 
             for name, param in model.named_parameters():
-                if param.requires_grad and param.grad is not None and _is_backbone(name):
+                if param.requires_grad and param.grad is not None:
                     new_fisher[name] += param.grad.data.pow(2)
 
             samples_seen += images.size(0)
 
-        # Average and accumulate
+        # Average and accumulate (pad old Fisher when shape grew from expansion)
         for name in new_fisher:
             new_fisher[name] /= max(samples_seen, 1)
             if name in self.fisher:
-                self.fisher[name] += new_fisher[name]
+                old_f = self.fisher[name]
+                if old_f.shape == new_fisher[name].shape:
+                    self.fisher[name] = old_f + new_fisher[name]
+                else:
+                    # Zero-pad old Fisher to the new (larger) shape, then add
+                    padded = torch.zeros_like(new_fisher[name])
+                    slices = tuple(slice(0, s) for s in old_f.shape)
+                    padded[slices] = old_f
+                    self.fisher[name] = padded + new_fisher[name]
             else:
                 self.fisher[name] = new_fisher[name]
 
-        # Snapshot current backbone parameters
+        # Snapshot ALL current parameters (including joint head)
         self.means = {
             name: param.data.clone()
             for name, param in model.named_parameters()
-            if param.requires_grad and _is_backbone(name)
+            if param.requires_grad
         }
 
         model.train(True)
 
     def penalty(self, model: nn.Module) -> torch.Tensor:
-        """Return the EWC regularisation term  sum_i F_i * (θ_i - θ*_i)^2."""
+        """Return the EWC regularisation term  sum_i F_i * (θ_i - θ*_i)^2.
+
+        For parameters that have grown (expandable head), the saved means/Fisher
+        are already padded to the current size during update(), so no special
+        handling is needed here.
+        """
         loss = torch.tensor(0.0, device=device)
         for name, param in model.named_parameters():
             if name in self.fisher:
-                diff = param - self.means[name].to(device)
-                loss = loss + (self.fisher[name].to(device) * diff.pow(2)).sum()
+                saved_mean = self.means[name].to(device)
+                saved_fisher = self.fisher[name].to(device)
+                # Handle case where param expanded since last update()
+                if param.shape != saved_mean.shape:
+                    padded_mean = torch.zeros_like(param.data)
+                    padded_fisher = torch.zeros_like(param.data)
+                    slices = tuple(slice(0, s) for s in saved_mean.shape)
+                    padded_mean[slices] = saved_mean
+                    padded_fisher[slices] = saved_fisher
+                    saved_mean = padded_mean
+                    saved_fisher = padded_fisher
+                diff = param - saved_mean
+                loss = loss + (saved_fisher * diff.pow(2)).sum()
         return loss
 
 
@@ -173,7 +187,7 @@ def train_ewc(
         intermediate_dim=256,
         projection_dim=128,
     ).to(device)
-    backbone_model.backbone.load_state_dict(
+    backbone_model.load_state_dict(
         torch.load(backbone_weights, map_location=device)
     )
 
