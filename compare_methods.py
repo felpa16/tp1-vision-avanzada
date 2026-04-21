@@ -179,8 +179,7 @@ def plot_forgetting_curves(results: dict) -> None:
     tasks = list(range(1, 6))
     fig, ax = plt.subplots(figsize=(8, 5))
     ax.set_title(
-        'Forgetting — Class-IL Accuracy Over Tasks\n'
-        '(steeper drop = more catastrophic forgetting)',
+        'Forgetting — Class-IL Accuracy Over Tasks\n',
         fontsize=12,
     )
 
