@@ -80,6 +80,20 @@ def collect_embeddings(model, loader):
     return np.concatenate(all_embeddings), np.concatenate(all_labels)
 
 
+def compute_test_loss(model, loader, temperature):
+    """Compute the average SupCon loss over the full test loader."""
+    model.eval()
+    total_loss = 0.0
+    with torch.no_grad():
+        for images, labels in loader:
+            images = images.to(device)
+            labels = labels.to(device)
+            _, projections = model(images)
+            projections = nn.functional.normalize(projections, dim=1)
+            total_loss += supcon_loss(projections, labels, tau=temperature).item()
+    return total_loss / len(loader)
+
+
 def plot_embeddings(ax, embeddings, labels, class_names, title):
     """Reduce embeddings to 2-D with t-SNE and scatter-plot them on *ax*."""
     tsne = TSNE(n_components=2, perplexity=30, random_state=42, max_iter=1000)
@@ -117,27 +131,23 @@ def plot_snapshots(snapshots, class_indices):
     print("Figure saved to graphs/latent_space_snapshots.png")
 
 
+def plot_test_loss(test_losses, num_epochs):
+    """Plot the SupCon test loss over epochs and save to disk."""
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.plot(range(1, num_epochs + 1), test_losses, color='tab:blue', linewidth=1.5)
+    ax.set_title('SupCon loss on test set', fontsize=13, fontweight='bold')
+    ax.set_xlabel('Epoch')
+    ax.set_ylabel('Loss')
+    ax.grid(True, linestyle='--', alpha=0.5)
+    plt.tight_layout()
+    plt.savefig('graphs/test_loss.png', dpi=150, bbox_inches='tight')
+    plt.close()
+    print("Figure saved to graphs/test_loss.png")
+
+
 # ── Training ──────────────────────────────────────────────────────────────────
 def train_backbone(task_number=0, num_epochs=NUM_EPOCHS, lr=LEARNING_RATE,
                    temperature=TEMPERATURE, batch_size=64, save_path='backbone.pth'):
-    """
-    Train the backbone with supervised contrastive loss on one task and save
-    the weights. Snapshots of the embeddings are collected at epochs 0, 12,
-    and *num_epochs* for t-SNE visualisation.
-
-    Parameters
-    ----------
-    task_number : int   – index into task_splits (0–4)
-    num_epochs  : int   – total training epochs
-    lr          : float – Adam learning rate
-    temperature : float – SupCon temperature τ
-    batch_size  : int   – DataLoader batch size
-    save_path   : str   – where to write the backbone state-dict
-
-    Returns
-    -------
-    model       : trained BackboneModel
-    """
     task = task_splits[task_number]
     train_loader = DataLoader(task['train'], batch_size=batch_size, shuffle=True)
     test_loader  = DataLoader(task['test'],  batch_size=batch_size, shuffle=False)
@@ -152,6 +162,7 @@ def train_backbone(task_number=0, num_epochs=NUM_EPOCHS, lr=LEARNING_RATE,
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     snapshots = {}
+    test_losses = []
 
     # Epoch-0 snapshot (before any training)
     emb, lbl = collect_embeddings(model, test_loader)
@@ -175,9 +186,13 @@ def train_backbone(task_number=0, num_epochs=NUM_EPOCHS, lr=LEARNING_RATE,
             optimizer.step()
             total_loss += loss.item()
 
-        avg_loss = total_loss / len(train_loader)
+        avg_train_loss = total_loss / len(train_loader)
+        avg_test_loss  = compute_test_loss(model, test_loader, temperature)
+        test_losses.append(avg_test_loss)
+
         completed_epoch = epoch + 1
-        print(f"  Epoch [{completed_epoch}/{num_epochs}]  Loss: {avg_loss:.4f}")
+        print(f"  Epoch [{completed_epoch}/{num_epochs}]  "
+              f"Train Loss: {avg_train_loss:.4f}  Test Loss: {avg_test_loss:.4f}")
 
         if completed_epoch in SNAPSHOT_EPOCHS and completed_epoch != 0:
             emb, lbl = collect_embeddings(model, test_loader)
@@ -191,6 +206,7 @@ def train_backbone(task_number=0, num_epochs=NUM_EPOCHS, lr=LEARNING_RATE,
     print(f"\nBackbone saved to {save_path}")
 
     plot_snapshots(snapshots, class_indices)
+    plot_test_loss(test_losses, num_epochs)
     return model
 
 
