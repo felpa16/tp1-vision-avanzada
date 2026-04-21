@@ -56,7 +56,7 @@ def train_finetune(
     """
     # ── Load pre-trained backbone ─────────────────────────────────────────────
     backbone = build_backbone().to(device)
-    backbone.load_state_dict("backbone.pth")
+    # backbone.load_state_dict("backbone.pth")
     backbone.load_state_dict(torch.load(backbone_weights, map_location=device))
 
     # ── Shared Class-IL head (grows with each task) ───────────────────────────
