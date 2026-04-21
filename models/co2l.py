@@ -290,7 +290,7 @@ def _eval_with_fresh_head(
 
 
 def train_co2l(
-    backbone_weights: str = 'backbone.pth',
+    backbone_weights: str = 'backbone_and_projections.pth',
     lambda_co2l: float = 1.0,
     temperature: float = TEMPERATURE,
     buffer_size: int = 200,
@@ -441,7 +441,7 @@ def train_co2l(
 
         # ── Train Task-IL head (frozen backbone) ──────────────────────────────
         head = train_task_head(
-            backbone_model=backbone_model,
+            backbone_model=backbone_model.backbone,
             task_split=task,
             embedding_dim=EMBEDDING_DIM,
             n_classes=N_CLASSES_PER_TASK,
@@ -469,7 +469,7 @@ def train_co2l(
 
         # ── Evaluate ──────────────────────────────────────────────────────────
         class_il = _eval_with_fresh_head(backbone_model, fresh_head, task_splits, task_idx + 1)
-        task_il  = evaluate_task_il(backbone_model, task_heads, task_splits, task_idx + 1)
+        task_il  = evaluate_task_il(backbone_model.backbone, task_heads, task_splits, task_idx + 1)
         class_il_accs.append(class_il)
         task_il_accs.append(task_il)
 

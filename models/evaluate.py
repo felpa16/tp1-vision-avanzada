@@ -72,7 +72,7 @@ def evaluate_class_il(
             )
             for images, labels in loader:
                 images, labels = images.to(device), labels.to(device)
-                embeddings, _ = backbone_model(images)
+                embeddings = backbone_model(images)
                 logits = joint_head(embeddings)
                 preds = logits.argmax(dim=1)
                 correct += (preds == labels).sum().item()
@@ -113,7 +113,7 @@ def evaluate_task_il(
             for images, labels in loader:
                 images, labels = images.to(device), labels.to(device)
                 labels = labels - label_offset
-                embeddings, _ = backbone_model(images)
+                embeddings = backbone_model(images)
                 preds = head(embeddings).argmax(dim=1)
                 correct += (preds == labels).sum().item()
                 total   += labels.size(0)
@@ -166,7 +166,7 @@ def train_task_head(
             labels = labels - label_offset   # remap to {0, ..., n_classes-1}
             optimizer.zero_grad()
             with torch.no_grad():
-                embeddings, _ = backbone_model(images)
+                embeddings = backbone_model(images)
             loss = criterion(head(embeddings), labels)
             loss.backward()
             optimizer.step()

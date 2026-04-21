@@ -56,10 +56,8 @@ def supcon_loss(features, labels, tau):
     logits_mask = torch.ones_like(mask) - torch.eye(len(mask), device=device)
     mask = mask * logits_mask
 
-    # Log-sum-exp stability trick
-    max_sim = sim.max(dim=1, keepdim=True).values.detach()
-    exp_sim = torch.exp(sim - max_sim) * logits_mask
-    log_prob = (sim - max_sim) - torch.log(exp_sim.sum(dim=1, keepdim=True))
+    exp_sim = torch.exp(sim) * logits_mask
+    log_prob = sim - torch.log(exp_sim.sum(dim=1, keepdim=True))
 
     pos_counts = mask.sum(1)
     if (pos_counts == 0).any():
@@ -149,7 +147,7 @@ def plot_test_loss(test_losses, num_epochs):
 
 # ── Training ──────────────────────────────────────────────────────────────────
 def train_backbone(task_number=0, num_epochs=NUM_EPOCHS, lr=LEARNING_RATE,
-                   temperature=TEMPERATURE, batch_size=64, save_path='backbone.pth'):
+                   temperature=TEMPERATURE, batch_size=64, backbone_save_path='backbone.pth', model_save_path='backbone_and_projections.pth'):
     task = task_splits[task_number]
     train_loader = DataLoader(task['train'], batch_size=batch_size, shuffle=True)
     test_loader  = DataLoader(task['test'],  batch_size=batch_size, shuffle=False)
@@ -204,8 +202,10 @@ def train_backbone(task_number=0, num_epochs=NUM_EPOCHS, lr=LEARNING_RATE,
             print(f"Snapshot collected: epoch {completed_epoch} "
                   f"({SNAPSHOT_EPOCHS[completed_epoch]})")
 
-    torch.save(model.state_dict(), save_path)
-    print(f"\nBackbone saved to {save_path}")
+    torch.save(model.state_dict(), model_save_path)
+    torch.save(model.backbone.state_dict(), backbone_save_path)
+    print(f"\nBackbone saved to {model_save_path}")
+    print(f"\nBackbone saved to {backbone_save_path}")
 
     plot_snapshots(snapshots, class_indices)
     plot_test_loss(test_losses, num_epochs)

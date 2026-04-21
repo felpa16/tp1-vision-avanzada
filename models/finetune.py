@@ -55,15 +55,9 @@ def train_finetune(
         'task_il'  : list[float]  – Task-IL accuracy after each task
     """
     # ── Load pre-trained backbone ─────────────────────────────────────────────
-    backbone_model = BackboneModel(
-        backbone=build_backbone(),
-        embedding_dim=EMBEDDING_DIM,
-        intermediate_dim=256,
-        projection_dim=128,
-    ).to(device)
-    backbone_model.load_state_dict(
-        torch.load(backbone_weights, map_location=device)
-    )
+    backbone = build_backbone().to(device)
+    backbone.load_state_dict("backbone.pth")
+    backbone.load_state_dict(torch.load(backbone_weights, map_location=device))
 
     # ── Shared Class-IL head (grows with each task) ───────────────────────────
     joint_head = ExpandableHead(in_features=EMBEDDING_DIM, n_classes=N_CLASSES_PER_TASK).to(device)
@@ -90,19 +84,19 @@ def train_finetune(
 
         # ── Fine-tune backbone + joint head end-to-end ────────────────────────
         optimizer = torch.optim.Adam(
-            list(backbone_model.parameters()) + list(joint_head.parameters()),
+            list(backbone.parameters()) + list(joint_head.parameters()),
             lr=lr,
         )
 
         for epoch in range(num_epochs):
-            backbone_model.train(True)
+            backbone.train(True)
             joint_head.train(True)
             total_loss = 0.0
 
             for images, labels in train_loader:
                 images, labels = images.to(device), labels.to(device)
                 optimizer.zero_grad()
-                embeddings, _ = backbone_model(images)
+                embeddings = backbone(images)
                 logits = joint_head(embeddings)
                 loss = criterion(logits, labels)
                 loss.backward()
@@ -117,7 +111,7 @@ def train_finetune(
         if verbose:
             print(f"  Training Task-IL head for task {task_idx + 1}…")
         head = train_task_head(
-            backbone_model=backbone_model,
+            backbone_model=backbone,
             task_split=task,
             embedding_dim=EMBEDDING_DIM,
             n_classes=N_CLASSES_PER_TASK,
@@ -128,8 +122,8 @@ def train_finetune(
         task_heads.append(head)
 
         # ── Evaluate ──────────────────────────────────────────────────────────
-        class_il = evaluate_class_il(backbone_model, joint_head, task_splits, task_idx + 1)
-        task_il  = evaluate_task_il(backbone_model, task_heads, task_splits, task_idx + 1)
+        class_il = evaluate_class_il(backbone, joint_head, task_splits, task_idx + 1)
+        task_il  = evaluate_task_il(backbone, task_heads, task_splits, task_idx + 1)
         class_il_accs.append(class_il)
         task_il_accs.append(task_il)
 

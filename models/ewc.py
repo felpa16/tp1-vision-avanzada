@@ -146,8 +146,7 @@ class _JointModel(nn.Module):
         self.joint_head = joint_head
 
     def forward(self, x):
-        embeddings, _ = self.backbone_model(x)
-        return self.joint_head(embeddings)
+        return self.joint_head(self.backbone_model(x))
 
 
 # ── Main training function ────────────────────────────────────────────────────
@@ -181,15 +180,8 @@ def train_ewc(
     -------
     dict with 'class_il' and 'task_il' lists (one entry per task)
     """
-    backbone_model = BackboneModel(
-        backbone=build_backbone(),
-        embedding_dim=EMBEDDING_DIM,
-        intermediate_dim=256,
-        projection_dim=128,
-    ).to(device)
-    backbone_model.load_state_dict(
-        torch.load(backbone_weights, map_location=device)
-    )
+    backbone = build_backbone().to(device)
+    backbone.load_state_dict(torch.load(backbone_weights, map_location=device))
 
     joint_head = ExpandableHead(in_features=EMBEDDING_DIM, n_classes=N_CLASSES_PER_TASK).to(device)
     ewc_state  = EWCState()
@@ -213,12 +205,12 @@ def train_ewc(
         joint_head = joint_head.to(device)
 
         optimizer = torch.optim.Adam(
-            list(backbone_model.parameters()) + list(joint_head.parameters()),
-            lr=lr,
+            list(backbone.parameters()) + list(joint_head.parameters()),
+            lr=lr
         )
 
         for epoch in range(num_epochs):
-            backbone_model.train(True)
+            backbone.train(True)
             joint_head.train(True)
             total_loss = 0.0
 
@@ -226,12 +218,12 @@ def train_ewc(
                 images, labels = images.to(device), labels.to(device)
                 optimizer.zero_grad()
 
-                embeddings, _ = backbone_model(images)
+                embeddings = backbone(images)
                 logits = joint_head(embeddings)
                 ce_loss = criterion(logits, labels)
 
                 # EWC penalty (zero on first task since ewc_state is empty)
-                joint_model = _JointModel(backbone_model, joint_head)
+                joint_model = _JointModel(backbone, joint_head)
                 ewc_loss = ewc_state.penalty(joint_model)
 
                 loss = ce_loss + lambda_ewc * ewc_loss
@@ -246,12 +238,12 @@ def train_ewc(
         # ── Compute Fisher and snapshot parameters ────────────────────────────
         if verbose:
             print("  Computing Fisher Information Matrix…")
-        joint_model = _JointModel(backbone_model, joint_head)
+        joint_model = _JointModel(backbone, joint_head)
         ewc_state.update(joint_model, train_loader, criterion, n_samples=fisher_samples)
 
         # ── Train Task-IL head ────────────────────────────────────────────────
         head = train_task_head(
-            backbone_model=backbone_model,
+            backbone_model=backbone,
             task_split=task,
             embedding_dim=EMBEDDING_DIM,
             n_classes=N_CLASSES_PER_TASK,
@@ -262,8 +254,8 @@ def train_ewc(
         task_heads.append(head)
 
         # ── Evaluate ──────────────────────────────────────────────────────────
-        class_il = evaluate_class_il(backbone_model, joint_head, task_splits, task_idx + 1)
-        task_il  = evaluate_task_il(backbone_model, task_heads, task_splits, task_idx + 1)
+        class_il = evaluate_class_il(backbone, joint_head, task_splits, task_idx + 1)
+        task_il  = evaluate_task_il(backbone, task_heads, task_splits, task_idx + 1)
         class_il_accs.append(class_il)
         task_il_accs.append(task_il)
 
